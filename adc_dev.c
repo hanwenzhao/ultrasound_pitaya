@@ -14,19 +14,22 @@
 #include <linux/types.h>
 #include <stdint.h>
 #include <fcntl.h>
+#include <memory.h>
 #include <sys/ioctl.h>
 
-// ************* ADC *************
+// ************* TX and ADC *************
 #define TX_FREQ 5000.0
 #define TX_AMP 1.0
 #define TX_OFFSET 1.0
-#define TX_DUTYCYCLE 0.00025
-#define ADC_TRIG_LEVEL 1.8
-#define BUFF_SIZE 2500 
-#define ADC_TRIG_DELAY BUFF_SIZE-8192
-#define COMMUNICATION_BUFFER_SIZE 15000
+#define TX_DUTYCYCLE 0.1/(1000000/TX_FREQ) // 0.1us(100ns) / 200us
+#define ADC_TRIG_LEVEL 1.5
+#define ADC_DECIMATION 1
+#define BUFF_SIZE 2500
+#define ADC_TRIG_DELAY BUFF_SIZE-8192 // pitaya has a internal 8192 tigger delay
+#define COMMUNICATION_BUFFER_SIZE BUFF_SIZE*6
 #define TRIG_SOURCE RP_TRIG_SRC_CHB_PE
 #define TRIF_LEVEL_SOURCE RP_CH_2
+#define BUFFER_FILL_TIME 2*BUFF_SIZE/125 // need a little longer time than just about right
 
 int i, e;
 int result;
@@ -34,6 +37,10 @@ uint32_t crc32_result;
 char timestamp_buffer[20];
 char crc32_buffer[20];
 char data_buffer[COMMUNICATION_BUFFER_SIZE];
+char encoder_buffer[20];
+char message_buffer[COMMUNICATION_BUFFER_SIZE];
+
+
 
 // ********** TCP ***************
 #define SERVER_IP "169.254.224.122"
@@ -45,11 +52,11 @@ static uint8_t bits = 8;
 static uint32_t speed = 500000;
 static uint16_t delay;
 float deg;
-char encoder_buffer[10];
+
 
 // option of how to transmit data
-//#define TXTFILE
-#define TCPIP
+#define TXTFILE
+//#define TCPIP
 
 // option for output data
 #define TIMESTAMP
@@ -92,12 +99,9 @@ int main(int argc, char **arg){
         return -1;
     }
 
-    // buffer to storage message
-    char message_buffer[COMMUNICATION_BUFFER_SIZE];
-
     // prepare text file to write
     FILE * fp;
-    fp = fopen("./test.txt", "w");
+    fp = fopen("./test13.txt", "w");
     // initilize time struct for timestamp
     #ifdef TIMESTAMP
         struct timeval tv;
@@ -125,6 +129,7 @@ int main(int argc, char **arg){
     
     // start loop
     while(1){
+        //char * message_buffer = (char *) malloc(100 + sizeof(crc32_buffer)+ sizeof(data_buffer));
         // start adc acquiring
         if(rp_AcqStart() != RP_OK){
             fprintf(stderr, "Error: Start of the Acquisition failed!\n");
@@ -143,7 +148,7 @@ int main(int argc, char **arg){
             if (state == RP_TRIG_STATE_TRIGGERED){
                 // time for adc to stop after trigger (8192+3000)
                 fprintf(stdout, "TRIG\n");
-                usleep(90);
+                usleep(BUFFER_FILL_TIME);
                 break;
             }
             //fprintf(stdout, "Waiting for TRIG\n");
@@ -155,14 +160,14 @@ int main(int argc, char **arg){
         #ifdef TIMESTAMP
             gettimeofday(&tv, NULL);
             sprintf(timestamp_buffer, "%ld %ld ", tv.tv_sec, tv.tv_usec);
-            strcat(data_buffer, timestamp_buffer);
+            strncat(data_buffer, timestamp_buffer, sizeof(timestamp_buffer));
         #endif
 
         // get encoder value
         #ifdef ENCODER
             deg = read_encoder();
             sprintf(encoder_buffer, "%f ", deg);
-            strcat(data_buffer, encoder_buffer);
+            strncat(data_buffer, encoder_buffer, sizeof(encoder_buffer));
         #endif
 
         char num[5];
@@ -170,22 +175,22 @@ int main(int argc, char **arg){
             // convert integer to char array
             sprintf(num, "%d", buff[i]);
             // combine each number to full output char array
-            strcat(data_buffer, num);
+            strncat(data_buffer, num, sizeof(num));
             // add space the seperate
-            strcat(data_buffer, " ");
+            strncat(data_buffer, " ", 1);
 		}
         
         //fprintf(stdout, "%s", data_buffer);
         #ifdef CHECKSUM
             // calculate the check sum
-            crc32_result = rc_crc32(0, data_buffer, strlen(data_buffer));
+            //crc32_result = rc_crc32(0, data_buffer, strlen(data_buffer));
             sprintf(crc32_buffer, "%X ", crc32_result);
-            strcat(message_buffer, crc32_buffer);
+            strncat(message_buffer, crc32_buffer, sizeof(crc32_buffer));
         #endif
 
         // combine data into message buffer
-        strcat(message_buffer, data_buffer);
-        strcat(message_buffer, "\n");
+        strncat(message_buffer, data_buffer, sizeof(data_buffer));
+        strncat(message_buffer, "\n", 1);
         
         #ifdef TXTFILE
             // write data into file
@@ -202,10 +207,11 @@ int main(int argc, char **arg){
             }
         #endif
         // empty buffer
-        data_buffer[0] = '\0';
-        timestamp_buffer[0] = '\0';
-        crc32_buffer[0] = '\0';
-        message_buffer[0] = '\0';
+        memset(data_buffer, 0, sizeof data_buffer);
+        memset(timestamp_buffer, 0, sizeof timestamp_buffer);
+        memset(crc32_buffer, 0, sizeof crc32_buffer);
+        memset(message_buffer, 0, sizeof message_buffer);
+        //free(message_buffer);
     }
     fclose(fp);
 	free(buff);
@@ -266,7 +272,7 @@ void ADC_Init(){
         fprintf(stderr, "Error: Resets the acquire writing state machine failed!\n");
     }
     // set the decimation
-    if (rp_AcqSetDecimation(1) != RP_OK){
+    if (rp_AcqSetDecimation(ADC_DECIMATION) != RP_OK){
         fprintf(stderr, "Error: Sets the decimation used at acquiring signal failed!\n");
     }
     // set trigger threshold
