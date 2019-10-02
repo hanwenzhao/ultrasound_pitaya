@@ -23,13 +23,13 @@
 #define TX_OFFSET 1.0
 #define TX_DUTYCYCLE 0.1/(1000000/TX_FREQ) // 0.1us(100ns) / 200us
 #define ADC_TRIG_LEVEL 1.5
-#define ADC_DECIMATION 1
-#define BUFF_SIZE 2500
+#define ADC_DECIMATION RP_DEC_8
+#define BUFF_SIZE 3500
 #define ADC_TRIG_DELAY BUFF_SIZE-8192 // pitaya has a internal 8192 tigger delay
 #define COMMUNICATION_BUFFER_SIZE BUFF_SIZE*6
 #define TRIG_SOURCE RP_TRIG_SRC_CHB_PE
 #define TRIF_LEVEL_SOURCE RP_CH_2
-#define BUFFER_FILL_TIME 2*BUFF_SIZE/125 // need a little longer time than just about right
+#define BUFFER_FILL_TIME 16*BUFF_SIZE/125 // need a little longer time than just about right
 
 int i, e;
 int result;
@@ -101,7 +101,7 @@ int main(int argc, char **arg){
 
     // prepare text file to write
     FILE * fp;
-    fp = fopen("./test13.txt", "w");
+    fp = fopen("./test.txt", "w");
     // initilize time struct for timestamp
     #ifdef TIMESTAMP
         struct timeval tv;
@@ -161,11 +161,12 @@ int main(int argc, char **arg){
             gettimeofday(&tv, NULL);
             sprintf(timestamp_buffer, "%ld %ld ", tv.tv_sec, tv.tv_usec);
             strncat(data_buffer, timestamp_buffer, sizeof(timestamp_buffer));
+            printf("%s", timestamp_buffer);
         #endif
 
         // get encoder value
         #ifdef ENCODER
-            deg = read_encoder();
+            //deg = read_encoder();
             sprintf(encoder_buffer, "%f ", deg);
             strncat(data_buffer, encoder_buffer, sizeof(encoder_buffer));
         #endif
@@ -183,7 +184,7 @@ int main(int argc, char **arg){
         //fprintf(stdout, "%s", data_buffer);
         #ifdef CHECKSUM
             // calculate the check sum
-            //crc32_result = rc_crc32(0, data_buffer, strlen(data_buffer));
+            crc32_result = rc_crc32(0, data_buffer, strlen(data_buffer));
             sprintf(crc32_buffer, "%X ", crc32_result);
             strncat(message_buffer, crc32_buffer, sizeof(crc32_buffer));
         #endif
@@ -271,8 +272,9 @@ void ADC_Init(){
     if (rp_AcqReset() != RP_OK){
         fprintf(stderr, "Error: Resets the acquire writing state machine failed!\n");
     }
+    rp_acq_decimation_t rp_dec = ADC_DECIMATION;
     // set the decimation
-    if (rp_AcqSetDecimation(ADC_DECIMATION) != RP_OK){
+    if (rp_AcqSetDecimation(rp_dec) != RP_OK){
         fprintf(stderr, "Error: Sets the decimation used at acquiring signal failed!\n");
     }
     // set trigger threshold
@@ -310,9 +312,7 @@ static int init_spi(){
     return 0;
 }
 
-
-static void transfer(int fd, uint8_t const *tx, uint8_t const *rx, size_t len)
-{
+static void transfer(int fd, uint8_t const *tx, uint8_t const *rx, size_t len){
 	int ret;
 	struct spi_ioc_transfer tr = {
 		.tx_buf = (unsigned long)tx,
@@ -351,7 +351,7 @@ float read_encoder(){
     uint8_t rx_buff = 0xA5;
 	uint8_t temp[2]; // temp variale to store MSB and LSB
 	uint16_t ABSposition = 0;
-	float deg = 0.0;
+	//float deg = 0.0;
 
 	// send the first rd_pos command
 	transfer(spi_fd, &rd_pos, &rx_buff, 1);
@@ -377,10 +377,10 @@ float read_encoder(){
 	// add LSB
 	ABSposition += temp[1];
 	// convert to angle
-	deg = ABSposition * 360.0 / 4096.0;
+	//deg = ABSposition * 360.0 / 4096.0;
 	
 	// wait a bit
 	usleep(1);
 	
-	return deg;	
+	return ABSposition;	
 }
