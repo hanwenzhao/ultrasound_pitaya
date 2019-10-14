@@ -18,6 +18,10 @@
 #include <memory.h>
 #include <sys/ioctl.h>
 
+/* ##################### OPTIONS ##################### */
+#define TXTFILE
+//#define TCPIP
+
 /* ##################### Defines ##################### */
 /* ADC Defines */
 #define TX_FREQ 5000.0
@@ -50,12 +54,12 @@ unsigned long time_stamp;
 uint16_t encoder;
 int16_t temp;
 uint32_t crc_result;
-const unsigned char marker[10] = {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF};
+const unsigned char marker[10] = {0x00,0x01,0x00,0x01,0x00,0x01,0x00,0x01,0x00,0x01};
 unsigned char time_stamp_char[4];
 unsigned char encoder_char[2];
 unsigned char crc_char[4];
 unsigned char adc_char[2*BUFF_SIZE];
-unsigned char crc_input[10+4+2+2*BUFF_SIZE];
+unsigned char crc_input[4+2+2*BUFF_SIZE];
 unsigned char message_buff[10+4+2+2*BUFF_SIZE+4];
 
 /* ##################### Functions ##################### */
@@ -73,6 +77,26 @@ int i;
 
 
 int main(int argc, char **arg){
+    #ifdef TCPIP
+        // prepare for TCP communication
+        int sockfd, portno = 51717, n;
+        char serverIp[] = SERVER_IP;
+        struct sockaddr_in serv_addr;
+        struct hostent *server;
+        fprintf(stdout, "contacting %s on port %d\n", serverIp, portno);
+        if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0){
+            printf( "ERROR opening socket" );
+        }
+        if ((server = gethostbyname( serverIp)) == NULL){
+            printf( "ERROR, no such host\n");
+        }
+        bzero( (char *) &serv_addr, sizeof(serv_addr));
+        serv_addr.sin_family = AF_INET;
+        bcopy( (char *)server->h_addr, (char *)&serv_addr.sin_addr.s_addr, server->h_length);
+        serv_addr.sin_port = htons(portno);
+        if ( connect(sockfd,(struct sockaddr *)&serv_addr,sizeof(serv_addr)) < 0) 
+            printf( "ERROR connecting");
+    #endif
     // initialize all systems
     System_Init();
     // prepare text file to write
@@ -146,10 +170,9 @@ int main(int argc, char **arg){
             memcpy(adc_char+i*sizeof(temp), &temp, sizeof temp);
         }
         // concatenation everything we have now for crc calculation
-        memcpy(crc_input, marker, sizeof(marker));
-        memcpy(crc_input+sizeof(marker), time_stamp_char, sizeof(time_stamp_char));
-        memcpy(crc_input+sizeof(marker)+sizeof(time_stamp_char), encoder_char, sizeof(encoder_char));
-        memcpy(crc_input+sizeof(marker)+sizeof(time_stamp_char)+sizeof(encoder_char), adc_char, sizeof(adc_char));
+        memcpy(crc_input, time_stamp_char, sizeof(time_stamp_char));
+        memcpy(crc_input+sizeof(time_stamp_char), encoder_char, sizeof(encoder_char));
+        memcpy(crc_input+sizeof(time_stamp_char)+sizeof(encoder_char), adc_char, sizeof(adc_char));
         // calculate crc32 checksum 
         crc_result = rc_crc32(0, crc_input, sizeof(crc_input));
         //printf("CRC is %X\n", crc_result);
@@ -159,9 +182,17 @@ int main(int argc, char **arg){
         memcpy(crc_char, (unsigned char *)&crc_result, sizeof crc_char);
         //printf("CRC in bytes:\n");
         // put everything into message buffer
-        memcpy(message_buff, crc_input, sizeof(crc_input));
-        memcpy(message_buff+sizeof(crc_input), crc_char, sizeof(crc_char));
-        fwrite(&message_buff, sizeof(message_buff), 1, fp);
+        memcpy(message_buff, marker, sizeof(marker));
+        memcpy(message_buff+sizeof(marker), crc_input, sizeof(crc_input));
+        memcpy(message_buff+sizeof(marker)+sizeof(crc_input), crc_char, sizeof(crc_char));
+        #ifdef TXTFILE
+            fwrite(&message_buff, sizeof(message_buff), 1, fp);
+        #endif
+        #ifdef TCPIP
+        if ((e = write(sockfd, &message_buffer, sizeof(message_buffer))) < 0){
+                fprintf(stdout, "ERROR writing to socket");
+            }
+        #endif
     }
     end = clock();
     cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
