@@ -28,7 +28,7 @@
 #define TX_AMP 1.0
 #define TX_OFFSET 1.0
 #define TX_DUTYCYCLE 0.1/(1000000/TX_FREQ) // 0.1us(100ns) / 200us
-#define ADC_TRIG_LEVEL 1.5
+#define ADC_TRIG_LEVEL 1.8
 #define ADC_DECIMATION RP_DEC_8
 #define BUFF_SIZE 2490
 #define ADC_TRIG_DELAY BUFF_SIZE-8192 // pitaya has a internal 8192 tigger delay
@@ -73,7 +73,10 @@ uint16_t read_encoder();
 uint32_t rc_crc32(uint32_t crc, unsigned char *buf, size_t len);
 static void transfer(int fd, uint8_t const *tx, uint8_t const *rx, size_t len);
 void print_bytes(unsigned char num[], int size);
-int i;
+int i,e;
+
+/* ##################### TCP ##################### */
+#define SERVER_IP "169.254.209.209"
 
 
 int main(int argc, char **arg){
@@ -189,7 +192,7 @@ int main(int argc, char **arg){
             fwrite(&message_buff, sizeof(message_buff), 1, fp);
         #endif
         #ifdef TCPIP
-        if ((e = write(sockfd, &message_buffer, sizeof(message_buffer))) < 0){
+        if ((e = write(sockfd, &message_buff, sizeof(message_buff))) < 0){
                 fprintf(stdout, "ERROR writing to socket");
             }
         #endif
