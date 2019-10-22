@@ -30,7 +30,7 @@
 #define TX_DUTYCYCLE 0.1/(1000000/TX_FREQ) // 0.1us(100ns) / 200us
 #define ADC_TRIG_LEVEL 1.8
 #define ADC_DECIMATION RP_DEC_8
-#define BUFF_SIZE 2490
+#define BUFF_SIZE 2500
 #define ADC_TRIG_DELAY BUFF_SIZE-8192 // pitaya has a internal 8192 tigger delay
 #define TRIG_SOURCE RP_TRIG_SRC_CHB_PE
 #define TRIF_LEVEL_SOURCE RP_CH_2
@@ -59,8 +59,9 @@ unsigned char time_stamp_char[4];
 unsigned char encoder_char[2];
 unsigned char crc_char[4];
 unsigned char adc_char[2*BUFF_SIZE];
-unsigned char crc_input[4+2+2*BUFF_SIZE];
-unsigned char message_buff[10+4+2+2*BUFF_SIZE+4];
+unsigned char crc_input[4+1+2+2*BUFF_SIZE];
+unsigned char message_buff[10+4+1+2+2*BUFF_SIZE+4];
+unsigned char probe_type = 0x01;
 
 /* ##################### Functions ##################### */
 static int SPI_Init();
@@ -73,6 +74,7 @@ uint16_t read_encoder();
 uint32_t rc_crc32(uint32_t crc, unsigned char *buf, size_t len);
 static void transfer(int fd, uint8_t const *tx, uint8_t const *rx, size_t len);
 void print_bytes(unsigned char num[], int size);
+void TX_Init_Chrip();
 int i,e;
 
 /* ##################### TCP ##################### */
@@ -104,7 +106,7 @@ int main(int argc, char **arg){
     System_Init();
     // prepare text file to write
     FILE * fp;
-    fp = fopen("./test.txt", "w");
+    fp = fopen("./b_mode_quad1_3.txt", "w");
     // set trigger delay
     if (rp_AcqSetTriggerDelay((int32_t)ADC_TRIG_DELAY) != RP_OK){
         fprintf(stderr, "Error: Sets the number of decimated data after trigger written into memory failed!\n");
@@ -113,7 +115,7 @@ int main(int argc, char **arg){
     clock_t start, end;
     double cpu_time_used;
     start = clock();
-    for (int j = 0; j < 1000; j++){
+    for (int j = 0; j < 5000; j++){
     //while(1){ 
         // start adc acquiring
         if(rp_AcqStart() != RP_OK){
@@ -174,8 +176,10 @@ int main(int argc, char **arg){
         }
         // concatenation everything we have now for crc calculation
         memcpy(crc_input, time_stamp_char, sizeof(time_stamp_char));
-        memcpy(crc_input+sizeof(time_stamp_char), encoder_char, sizeof(encoder_char));
-        memcpy(crc_input+sizeof(time_stamp_char)+sizeof(encoder_char), adc_char, sizeof(adc_char));
+        memcpy(crc_input+sizeof(time_stamp_char), &probe_type, sizeof(probe_type));
+        memcpy(crc_input+sizeof(time_stamp_char)+sizeof(probe_type), encoder_char, sizeof(encoder_char));
+        memcpy(crc_input+sizeof(time_stamp_char)+sizeof(probe_type)+sizeof(encoder_char), adc_char, sizeof(adc_char));
+        //print_bytes(crc_input, sizeof(crc_input));
         // calculate crc32 checksum 
         crc_result = rc_crc32(0, crc_input, sizeof(crc_input));
         //printf("CRC is %X\n", crc_result);
@@ -188,6 +192,7 @@ int main(int argc, char **arg){
         memcpy(message_buff, marker, sizeof(marker));
         memcpy(message_buff+sizeof(marker), crc_input, sizeof(crc_input));
         memcpy(message_buff+sizeof(marker)+sizeof(crc_input), crc_char, sizeof(crc_char));
+        //print_bytes(message_buff, sizeof(message_buff));
         #ifdef TXTFILE
             fwrite(&message_buff, sizeof(message_buff), 1, fp);
         #endif
@@ -256,6 +261,32 @@ void TX_Init(){
 	rp_GenOutEnable(RP_CH_1);
 }
 
+void TX_Init_Chrip(){
+    int buff_size = 15000;
+    float *x = (float *)malloc(buff_size * sizeof(float));
+    for (int i = 0; i < buff_size; i++){
+        x[i] = 0;
+    }
+    for (int i = 0; i < 10; i++){
+        x[i] = 1;
+    }
+    for (int i = 20; i < 30; i++){
+        x[i] = 1;
+    }
+    for (int i = 40; i < 50; i++){
+        x[i] = 1;
+    }
+    for (int i = 60; i < 70; i++){
+        x[i] = 1;
+    }
+    rp_GenWaveform(RP_CH_1, RP_WAVEFORM_ARBITRARY);
+    rp_GenArbWaveform(RP_CH_1, x, buff_size);
+    rp_GenFreq(RP_CH_1, 5000.0);
+    rp_GenAmp(RP_CH_1, 1.0);
+    rp_GenOutEnable(RP_CH_1);
+    free(x);
+}
+
 void ADC_Init(){
     // rest adc
     if (rp_AcqReset() != RP_OK){
@@ -278,7 +309,8 @@ void System_Init(){
         fprintf(stderr, "RP api init failed!\n");
     }
     // start generating Tx signal
-    TX_Init();
+    //TX_Init();
+    TX_Init_Chrip();
     // initialize ADC
     ADC_Init();
     /* Init the spi resources */
