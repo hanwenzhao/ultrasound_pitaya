@@ -106,7 +106,7 @@ int main(int argc, char **arg){
     System_Init();
     // prepare text file to write
     FILE * fp;
-    fp = fopen("./box2_2.txt", "w");
+    fp = fopen("./test.txt", "w");
     // set trigger delay
     if (rp_AcqSetTriggerDelay((int32_t)ADC_TRIG_DELAY) != RP_OK){
         fprintf(stderr, "Error: Sets the number of decimated data after trigger written into memory failed!\n");
