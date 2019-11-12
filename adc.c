@@ -28,7 +28,7 @@
 #define TX_AMP 1.0
 #define TX_OFFSET 1.0
 #define TX_DUTYCYCLE 0.1/(1000000/TX_FREQ) // 0.1us(100ns) / 200us
-#define ADC_TRIG_LEVEL 1.8
+#define ADC_TRIG_LEVEL 2.0
 #define ADC_DECIMATION RP_DEC_8
 #define BUFF_SIZE 2500
 #define ADC_TRIG_DELAY BUFF_SIZE-8192 // pitaya has a internal 8192 tigger delay
@@ -61,7 +61,7 @@ unsigned char crc_char[4];
 unsigned char adc_char[2*BUFF_SIZE];
 unsigned char crc_input[4+1+2+2*BUFF_SIZE];
 unsigned char message_buff[10+4+1+2+2*BUFF_SIZE+4];
-unsigned char probe_type = 0x01;
+unsigned char information_byte = 0xE1;
 
 /* ##################### Functions ##################### */
 static int SPI_Init();
@@ -106,7 +106,7 @@ int main(int argc, char **arg){
     System_Init();
     // prepare text file to write
     FILE * fp;
-    fp = fopen("./b_mode_quad1_3.txt", "w");
+    fp = fopen("./box2_2.txt", "w");
     // set trigger delay
     if (rp_AcqSetTriggerDelay((int32_t)ADC_TRIG_DELAY) != RP_OK){
         fprintf(stderr, "Error: Sets the number of decimated data after trigger written into memory failed!\n");
@@ -115,7 +115,7 @@ int main(int argc, char **arg){
     clock_t start, end;
     double cpu_time_used;
     start = clock();
-    for (int j = 0; j < 5000; j++){
+    for (int j = 0; j < 1000; j++){
     //while(1){ 
         // start adc acquiring
         if(rp_AcqStart() != RP_OK){
@@ -161,7 +161,7 @@ int main(int argc, char **arg){
         /* ##################### Encoder ##################### */
         // read encoder
         encoder = read_encoder();
-        //printf("Encoder is %d\n", encoder);
+        printf("Encoder is %d\n", encoder);
         // convert small endian to big endian
         encoder = changed_endian_2Bytes(encoder);
         // put number in bytes
@@ -176,9 +176,9 @@ int main(int argc, char **arg){
         }
         // concatenation everything we have now for crc calculation
         memcpy(crc_input, time_stamp_char, sizeof(time_stamp_char));
-        memcpy(crc_input+sizeof(time_stamp_char), &probe_type, sizeof(probe_type));
-        memcpy(crc_input+sizeof(time_stamp_char)+sizeof(probe_type), encoder_char, sizeof(encoder_char));
-        memcpy(crc_input+sizeof(time_stamp_char)+sizeof(probe_type)+sizeof(encoder_char), adc_char, sizeof(adc_char));
+        memcpy(crc_input+sizeof(time_stamp_char), &information_byte, sizeof(information_byte));
+        memcpy(crc_input+sizeof(time_stamp_char)+sizeof(information_byte), encoder_char, sizeof(encoder_char));
+        memcpy(crc_input+sizeof(time_stamp_char)+sizeof(information_byte)+sizeof(encoder_char), adc_char, sizeof(adc_char));
         //print_bytes(crc_input, sizeof(crc_input));
         // calculate crc32 checksum 
         crc_result = rc_crc32(0, crc_input, sizeof(crc_input));
@@ -203,6 +203,7 @@ int main(int argc, char **arg){
         #endif
     }
     end = clock();
+    fclose(fp);
     cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
     printf("%f seconds to execute \n", cpu_time_used);
     printf("%f Hz\n", 1.0/(cpu_time_used/1000));
